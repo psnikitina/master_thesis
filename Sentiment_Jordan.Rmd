@@ -1,0 +1,340 @@
+---
+title: "Sentiment analysis"
+output: html_notebook
+---
+
+
+#Скачиваем данные
+```{r}
+jordan <- read.csv("/Users/polina/Desktop/2 MMA/Term paper/За 5 недель/dataJordan.csv", sep=",")
+```
+
+#Выбираем твитты только на английском языке
+```{r message=FALSE, warning=FALSE}
+#Choose variables with texts
+library(dplyr)
+docs <- jordan %>%
+  filter(lang=="en") %>%
+  select(text, screen_name)
+
+colnames(docs)<-tolower(colnames(docs))
+```
+
+#Проводим токенизацию (разбиваем текст на слова)
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidytext)
+
+tidy_text <- docs %>%
+  unnest_tokens (word, text)
+```
+
+
+```{r}
+tidy_text %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+#Удаляем стоп-слова
+```{r}
+tidy_text2 <- docs %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+```
+
+#Здесь уже нет стоп-слов
+```{r}
+tidy_text2 %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+
+```{r}
+tidy_text2 <- docs %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+
+word_counts <- tidy_text2 %>%
+  count(word) %>%
+  arrange(desc(n))
+  
+ggplot(word_counts, aes(x = word, y = n)) +
+  geom_col()
+```
+
+#Выбираем только те слова, которые повторяются больше 400 раз
+```{r}
+word_counts2 <- tidy_text2 %>%
+  count(word) %>%
+  filter(n > 1000) %>%
+  arrange(desc(n))
+
+ggplot(word_counts2, aes(x = reorder(word,n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  ggtitle("Text Word Counts")
+```
+#Создаем датасет с пользовательскими стоп-словами, присоединяем к остальным
+```{r}
+custom_stop_words <- tribble(
+  ~word, ~lexicon,
+  "t.co", "CUSTOM",
+  "https", "CUSTOM",
+  "jumpman", "CUSTOM",
+  "olvszldosb", "CUSTOM",
+  "pm", "CUSTOM",
+  "7", "CUSTOM",
+  "9phdg6grmt", "CUSTOM",
+  "jumpman23", "CUSTOM",
+  "2021", "CUSTOM",
+  "1xnlrvbo9y", "CUSTOM",
+  "1", "CUSTOM",
+  "we're", "CUSTOM",
+  "ep1", "CUSTOM",
+  "kklx6ezeeq", "CUSTOM",
+  "0rihrzbhlz", "CUSTOM",
+  "dga8hn6ynp", "CUSTOM",
+  "obitoppin1", "CUSTOM",
+  "0lyiowrzgy", "CUSTOM",
+  "ufdxgrmkrb", "CUSTOM",
+  "cyi8cn2eir", "CUSTOM",
+  "luka7doncic", "CUSTOM",
+  "gcsn7fr3kv", "CUSTOM",
+  "veduabqwde", "CUSTOM",
+  "9", "CUSTOM",
+  "cyi8cn2elr", "CUSTOM")
+
+stop_words2 <- stop_words %>%
+  bind_rows(custom_stop_words)
+```
+
+#Повторно удаляем все стоп-слова 
+```{r}
+
+tidy_text3 <- docs %>%
+  mutate(id = row_number()) %>%
+  select(id, screen_name, text) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words2)
+
+```
+
+```{r}
+#docs$tweetId = as.numeric(rownames(docs))
+
+#tidy_text3 <- docs %>%
+ # unnest_tokens(word, text) %>%
+  #anti_join(stop_words2)
+```
+
+
+
+
+```{r}
+word_counts3 <- tidy_text3 %>%
+  count(word) %>%
+  filter(n > 300) %>%
+  mutate(word2 = fct_reorder(word, n))
+
+ggplot(word_counts3, aes(x = word2, y = n)) +
+  geom_col() +
+  coord_flip() +
+  ggtitle("Text Word Counts")
+```
+
+#Sentiment analysis
+
+
+```{r}
+
+get_sentiments("nrc")
+```
+
+
+
+#BING
+
+```{r}
+get_sentiments("bing") %>%
+  count(sentiment)
+```
+```{r message=FALSE, warning=FALSE}
+library(textdata)
+bing <- tidy_text3 %>%
+  inner_join(lexicon_bing())
+```
+
+```{r}
+bing %>%
+  count(sentiment)
+```
+#Bing_Sentiment score
+```{r}
+bing_sentiment_score<-bing %>%
+  group_by(id) %>%
+  summarise(n_negative=sum(sentiment=="negative"),
+            n_positive=sum(sentiment=="positive"),
+            screen_name=first(screen_name)) %>%
+  mutate(score_1=n_positive-n_negative) %>%
+  mutate(score_2=(n_positive/(n_positive+n_negative))*100)
+```
+
+```{r}
+bing_sentiment_score %>%
+  count(score_1)
+
+bing_sentiment_score %>%
+  count(score_2)
+```
+
+Top words of each sentiment
+```{r}
+bing_word_counts <- bing %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+library(ggplot2)
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 5) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  theme_bw() +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+
+Top words of each sentiment. Wordclouds
+```{r}
+library(reshape2)
+bing_wordcloud <- bing %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("red", "gray20"),
+                   max.words = 40)
+```
+
+#The final bing score
+```{r}
+custom_stop_words <- bind_rows(tibble(word = c("careless","falling"),  
+                                      lexicon = c("custom","custom")), 
+                               stop_words)
+
+stop_words2 <- stop_words %>%
+  bind_rows(custom_stop_words)
+
+tidy_text3 <- docs %>%
+  mutate(id = row_number()) %>%
+  select(id, screen_name, text) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words2)
+
+bing <- tidy_text3 %>%
+  inner_join(lexicon_bing())
+
+bing_sentiment_score<-bing %>%
+  group_by(id) %>%
+  summarise(n_negative=sum(sentiment=="negative"),
+            n_positive=sum(sentiment=="positive"),
+            screen_name=first(screen_name)) %>%
+  mutate(score_1=n_positive-n_negative) %>%
+  mutate(score_2=(n_positive/(n_positive+n_negative))*100)
+```
+
+```{r}
+bing_sentiment_score %>%
+  count(score_1)
+
+bing_sentiment_score %>%
+  count(score_2)
+```
+Top words of each sentiment
+```{r}
+bing_word_counts <- bing %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+library(ggplot2)
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 5) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  theme_bw() +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+
+ggsave('jordan_bing.png', units = 'in', dpi = 400)
+```
+
+```{r}
+bing_wordcloud <- bing %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("red", "gray20"),
+                   max.words = 40)
+```
+
+
+#NRC
+
+```{r}
+get_sentiments("nrc") 
+ 
+library(textdata)
+nrc <- tidy_text3 %>%
+  inner_join(lexicon_nrc())
+
+nrc %>%
+  count(sentiment)
+```
+
+
+
+```{r}
+nrc_sentiment_score<-nrc %>%
+  group_by(id) %>%
+  summarise(n_negative=sum(sentiment=="negative"),
+            n_positive=sum(sentiment=="positive"),
+            screen_name=first(screen_name)) %>%
+  mutate(score_1=n_positive-n_negative) %>%
+  mutate(score_2=(n_positive/(n_positive+n_negative))*100)
+
+nrc_sentiment_score %>%
+  count(score_1)
+
+nrc_sentiment_score %>%
+  count(score_2)
+```
+
+```{r}
+nrc_word_counts <- nrc %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+library(ggplot2)
+nrc_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 5) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  theme_bw() +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = NULL,
+       y = NULL)
+
+
+ggsave('jordan_nrc.png', units = 'in', dpi = 400, scale = 1.2)
+```
+
+
+

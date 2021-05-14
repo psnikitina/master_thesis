@@ -1,0 +1,66 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Загружаем данные
+```{r}
+underarmour <- read.csv("/Users/polina/Desktop/2 MMA/Term paper/За 5 недель/dataArmour.csv", sep=",")
+```
+Выбираем только твиты на английском 
+```{r}
+library(dplyr)
+docs <- underarmour %>%
+  filter(lang=="en") %>%
+  select(text)
+```
+
+```{r message=FALSE, warning=FALSE}
+#install.packages("tm")
+# Для обработки текста
+# install.packages("SnowballC") 
+# для стемминга
+library(tm)
+```
+Конвертируем набор текстов в Corpus. Corpus представляет собой контейнер для хранения текстов.
+```{r}
+corp <- Corpus(VectorSource(docs))
+```
+Превращаем буквы в строчные, удаляем цифры, пробелы и исправляем пунктуацию
+```{r}
+corp <- tm_map(corp, content_transformer(tolower))
+corp <- tm_map(corp, removeNumbers)
+corp <- tm_map(corp, removePunctuation)
+corp <- tm_map(corp, stripWhitespace)
+```
+Далее удаляем стоп-слова
+```{r}
+#stopwords("english")
+#Здесь отображены все стоп-слова на английском языке
+```
+Удаляем стоп-слова
+```{r}
+corp <- tm_map(corp, removeWords, stopwords("english"))
+```
+Удаляем пользовательские стоп-слова 
+```{r}
+corp <- tm_map(corp, removeWords, c("t.co", "https", "theonlywayisthrough", "lrxzdcuz2f", "dey0cnahuq", "isn't", "he's", "httpstcoggpkevtop","httpstcodeycnahuq","ufaauffc", "ohs6wcqxxv", 
+  "ado4s2yzmi", "lw7dotb1mu", "httpstcolrxzdcuzf"))
+```
+Посмотрим, что получилось на данном этапе
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(wordcloud)
+library(RColorBrewer)
+wordcloud(corp, random.order=F, max.words=50, colors=brewer.pal(8, "Dark2"))
+```
+
+
+Через другой датасет
+```{r warning=FALSE}
+set.seed(1234)
+
+wordcloud(words = word_counts3$word2, freq = word_counts3$n,
+          max.words = 200, random.order = FALSE, 
+          colors = brewer.pal(8, "Dark2"))
+```

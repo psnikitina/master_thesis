@@ -1,0 +1,65 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#PUMA
+
+Загружаем данные
+```{r}
+puma <- read.csv("/Users/polina/Desktop/2 MMA/Term paper/За 5 недель/dataPuma.csv", sep=",")
+```
+
+Выбираем только твиты на английском 
+```{r}
+library(dplyr)
+docs <- puma %>%
+  filter(lang=="en") %>%
+  select(text)
+```
+
+```{r}
+#install.packages("tm")
+# Для обработки текста
+# install.packages("SnowballC") 
+# для стемминга
+library(tm)
+```
+
+Конвертируем набор текстов в Corpus. Corpus представляет собой контейнер для хранения текстов.
+```{r}
+corp <- Corpus(VectorSource(docs))
+```
+
+Превращаем буквы в строчные, удаляем цифры, пробелы и исправляем пунктуацию
+```{r}
+corp <- tm_map(corp, content_transformer(tolower))
+corp <- tm_map(corp, removeNumbers)
+corp <- tm_map(corp, removePunctuation)
+corp <- tm_map(corp, stripWhitespace)
+```
+
+Далее удаляем стоп-слова
+```{r}
+#stopwords("english")
+#Здесь отображены все стоп-слова на английском языке
+```
+Удаляем стоп-слова
+```{r}
+corp <- tm_map(corp, removeWords, stopwords("english"))
+```
+
+Удаляем пользовательские стоп-слова 
+```{r}
+corp <- tm_map(corp, removeWords, c("t.co", "https", "foreverfaster","gysssagys","n8eme9hrtj","im","lleygsynmu", "rmo2ughjsj", "mersedesamgf1", "interpid", "lleygshbxu","httpstcormoughjsjnnforeverfaster","thatim","httpstconemehrtj","ufcdnnufd","pakistanufffufeuffuff","nmolto"))
+```
+
+
+Посмотрим, что получилось на данном этапе
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(wordcloud)
+library(RColorBrewer)
+wordcloud(corp, random.order=F, min.freq = 20, max.words=50, colors=brewer.pal(8, "Dark2"))
+```
+
+

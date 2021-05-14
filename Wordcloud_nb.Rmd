@@ -1,0 +1,85 @@
+---
+title: ""
+output: html_notebook
+---
+
+Загружаем данные
+```{r}
+nbalance <- read.csv("/Users/polina/Desktop/2 MMA/Term paper/За 5 недель/dataNbalance.csv", sep=",")
+```
+Выбираем только твиты на английском 
+```{r}
+library(dplyr)
+docs <- nbalance %>%
+  filter(lang=="en") %>%
+  select(text)
+```
+
+```{r message=FALSE, warning=FALSE}
+#install.packages("tm")
+# Для обработки текста
+# install.packages("SnowballC") 
+# для стемминга
+library(tm)
+```
+Конвертируем набор текстов в Corpus. Corpus представляет собой контейнер для хранения текстов.
+```{r}
+corp <- Corpus(VectorSource(docs))
+```
+Превращаем буквы в строчные, удаляем цифры, пробелы и исправляем пунктуацию
+```{r}
+corp <- tm_map(corp, content_transformer(tolower))
+corp <- tm_map(corp, removeNumbers)
+corp <- tm_map(corp, removePunctuation)
+corp <- tm_map(corp, stripWhitespace)
+```
+Далее удаляем стоп-слова
+```{r}
+#stopwords("english")
+#Здесь отображены все стоп-слова на английском языке
+```
+Удаляем стоп-слова
+```{r}
+corp <- tm_map(corp, removeWords, stopwords("english"))
+```
+Удаляем пользовательские стоп-слова 
+```{r}
+corp <- tm_map(corp, removeWords, c("t.co", "https", "wegotnow",  "de2p0tp93y", "program15bb", "program15bb", "espn", "ud7a1s6oz3", "xl78ckirag", "nnfrom", "happennnthe", "httpstcodeptpy" ,"httpstcoudasoz", "httpstcoxlckirag", "yl2um3asbj",  "program15bb", "2sys3ccca6", "ho5gspffpo",  "wzt1hdd51u"))
+
+
+```
+Посмотрим, что получилось на данном этапе
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(wordcloud)
+library(RColorBrewer)
+wordcloud(corp, random.order=F, max.words=50, colors=brewer.pal(8, "Dark2"))
+```
+
+
+Через другой датасет
+```{r warning=FALSE}
+set.seed(1234)
+
+wordcloud(words = word_counts3$word2, freq = word_counts3$n,
+          max.words = 200, random.order = FALSE, 
+          colors = brewer.pal(8, "Dark2"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+Это кроссовочек, но он у меня не работает
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(wordcloud2)
+
+wordcloud2(demoFreq ,figPath="/Users/polina/Desktop/2 MMA/Term paper/Скрипты/sneakers.png",  size = 1.5)
+```

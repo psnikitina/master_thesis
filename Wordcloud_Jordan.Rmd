@@ -1,0 +1,171 @@
+---
+title: "Wordcloud_2"
+output: html_notebook
+---
+
+#JORDAN
+
+Загружаем данные
+```{r}
+jordan <- read.csv("/Users/polina/Desktop/2 MMA/Term paper/За 5 недель/dataJordan.csv", sep=",")
+```
+Выбираем только твиты на английском 
+```{r}
+library(dplyr)
+docs <- jordan %>%
+  filter(lang=="en") %>%
+  select(text)
+```
+
+```{r message=FALSE, warning=FALSE}
+#install.packages("tm")
+# Для обработки текста
+# install.packages("SnowballC") 
+# для стемминга
+library(tm)
+library(SnowballC)
+```
+Конвертируем набор текстов в Corpus. Corpus представляет собой контейнер для хранения текстов.
+```{r}
+corp <- Corpus(VectorSource(docs))
+```
+Превращаем буквы в строчные, удаляем цифры, пробелы и исправляем пунктуацию
+```{r}
+corp <- tm_map(corp, content_transformer(tolower))
+corp <- tm_map(corp, removeNumbers)
+corp <- tm_map(corp, removePunctuation)
+corp <- tm_map(corp, stripWhitespace)
+corp <- tm_map(corp, stemDocument)
+```
+Далее удаляем стоп-слова
+```{r}
+stopwords("english")
+#Здесь отображены все стоп-слова на английском языке
+```
+Удаляем стоп-слова
+```{r}
+corp <- tm_map(corp, removeWords, stopwords("english"))
+```
+Удаляем пользовательские стоп-слова 
+```{r}
+corp <- tm_map(corp, removeWords, c("t.co", "https", "jumpman","olvszldosb","pm","9phdg6grmt","jumpman23","1xnlrvbo9y","we're","ep1", "kklx6ezeeq","0rihrzbhlz", "dga8hn6ynp", "0lyiowrzgy", "ufdxgrmkrb",  "cyi8cn2eir", "luka7doncic", "gcsn7fr3kv", "veduabqwde", "httpstcoolvszldosb"))
+
+```
+Посмотрим, что получилось на данном этапе
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(wordcloud)
+library(RColorBrewer)
+wordcloud(corp, random.order=F, max.words=50, colors=brewer.pal(8, "Dark2"))
+```
+
+
+
+
+
+
+
+
+
+Это кроссовочек, но он у меня не работает
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(wordcloud2)
+
+wordcloud2(demoFreq ,figPath="/Users/polina/Desktop/2 MMA/Term paper/Скрипты/sneakers.png",  size = 1.5)
+```
+
+
+Все ниже пока не трогаем, потом объясню
+
+Лемматизация
+1 вариант
+```{r}
+mystem <- function(doc) {
+  library(stringr)
+  sdoc <- system('mystem -nl -e utf-8 ', intern=T, input=doc)
+  # При получении нескольких вариантов mystem разделяет их
+  # вертикальной чертой. Удалим черту и варианты.
+  sdoc <- str_replace(sdoc, '\\|.*$', '')
+  # Если mystem сомневается в результате, он добавляет знак вопроса. Удаляем.
+  sdoc <- str_replace(sdoc, '\\?', '')
+  sdoc <- paste(sdoc, collapse=" ")
+  attributes(sdoc) <- attributes(doc)
+  sdoc
+}
+```
+
+Запасной вариант
+```{r}
+library(stringr)
+Myfield= '/Users/polina/Downloads/mystem.exe -c -wl'
+mystem = function(doc) {
+  sdoc = system(Myfield, intern=T, input=doc)
+  sdoc <- gsub("[{}]", "", sdoc) 
+  sdoc <- gsub("(\\|[^ ]+)", "", sdoc) 
+  sdoc <- gsub("\\?", "", sdoc)
+  sdoc <- gsub("\\s+", " ", sdoc) 
+  sdoc = paste(sdoc, collapse=" ") 
+  attributes(sdoc) <- attributes(doc) 
+  sdoc
+}
+```
+
+Снова обрабатываем наши твитты, добавляем лемматизацию
+```{r}
+corp <- tm_map(corp, stripWhitespace)
+corp <- tm_map(corp, tolower)
+corp <- tm_map(corp, removeNumbers)
+corp <- tm_map(corp, removePunctuation)
+corp <- tm_map(corp, removeWords, c(stopwords("english")))
+corp <- tm_map(corp, mystem)
+```
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+#Снова рисуем облако
+wordcloud(corp, random.order=F, max.words=100, colors=brewer.pal(8, "Dark2"))
+```
+
+
+Выполним стемминг (только если не получилась лемматизация)
+```{r}
+#install.packages("SnowballC")
+library(SnowballC)
+corp <- tm_map(corp, stemDocument)
+```
+
+```{r}
+dtm <- TermDocumentMatrix(corp)
+m <- as.matrix(dtm) # превратим в обычную матрицу
+vec <- sort(rowSums(m), decreasing = TRUE) # превратим в вектор с частотами, отсортированный по убыванию
+head(vec, 10)
+```
+
+```{r}
+data <- data.frame(word = names(vec), freq = vec) # превратим в базу данных
+head(data, 10) 
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+# для воспроизводимости - R будет располагать слова в случайном порядке
+set.seed(1234) 
+
+# min.freq - минимальная частота слова, которое отображается в облаке
+# max.words - максимальное число слов в облаке
+# colors - палитра цветов
+
+
+wordcloud(words = data$word, freq = data$freq, min.freq = 20,
+          max.words = 80, random.order = FALSE, 
+          colors = brewer.pal(8, "Dark2"))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
