@@ -1,0 +1,336 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+#Загрузка необходимых пакетов
+install.packages('rtweet')
+install.packages('dplyr')
+install.packages('igraph')
+```
+
+```{r}
+#Загрузка данных по 10 спортивным брендам
+Asics<-read.csv('dataAsicsA.csv')
+```
+
+Asics
+```{r}
+#Подготовка данных по Asics
+library(rtweet)
+Asics$created_at<-as.numeric(Asics$created_at)
+Asics$display_text_width<-as.numeric(Asics$display_text_width)
+Asics$is_quote<-as.logical(Asics$is_quote)
+Asics$is_retweet<-as.logical(Asics$is_retweet)
+Asics$favorite_count<-as.numeric(Asics$favorite_count)
+Asics$retweet_count<-as.numeric(Asics$retweet_count)
+Asics$quote_count<-as.numeric(Asics$quote_count)
+Asics$reply_count<-as.numeric(Asics$reply_count)
+Asics$hashtags<-as.character(Asics$hashtags)
+Asics$quoted_created_at<-as.numeric(Asics$quoted_created_at)
+Asics$quoted_favorite_count<-as.numeric(Asics$quoted_favorite_count)
+Asics$quoted_retweet_count<-as.numeric(Asics$quoted_retweet_count)
+Asics$quoted_followers_count<-as.numeric(Asics$quoted_followers_count)
+Asics$quoted_friends_count-as.numeric(Asics$quoted_friends_count)
+Asics$quoted_statuses_count-as.numeric(Asics$quoted_statuses_count)
+Asics$quoted_verified-as.logical(Asics$quoted_verified)
+
+library(dplyr)
+Asics_new <- Asics%>%
+  select(screen_name,retweet_screen_name)
+```
+
+```{r}
+#Начало сетевого анализа - удаление пропущенных данных, подготовка базовой матрицы, оформление двухстолбцовой матрицы для расчета метрик
+Asics_new <- Asics_new[complete.cases(Asics_new), ]
+Asics_for_matrix<-Asics_new%>%
+  select(screen_name,retweet_screen_name)
+Asics_new_matrix<- as.matrix(Asics_for_matrix)
+
+
+library(igraph)
+Asics_rtweet <- graph_from_edgelist(el = Asics_new_matrix, directed = TRUE)
+print.igraph(Asics_rtweet)
+```
+```{r}
+library(igraph)
+# Calculate out-degree (The number of edges going out of a vertex in a directed graph)
+out_degree <- degree(Asics_rtweet, mode = c("out"))
+out_degree_sort <- sort(out_degree, decreasing = TRUE)
+# View the top 10 users
+out_degree_sort[1:10]
+```
+
+```{r}
+# Calculate in-degree (The number of edges coming into a vertex in a directed graph)
+in_degree <- degree(Asics_rtweet, mode = c("in"))
+in_degree_sort <- sort(in_degree, decreasing = TRUE)
+# View the top 10 users
+in_degree_sort[1:10]
+```
+```{r}
+# Calculate betweeness centrality (measures the number of times a node lies on the shortest path between other nodes)
+betwn <- betweenness(Asics_rtweet, directed = TRUE)
+betwn_sort <- betwn %>%
+  sort(decreasing = TRUE) %>%
+  round()
+# View the top 10 users
+betwn_sort[1:10]
+```
+```{r}
+# Calculate eigenvector centrality (measures the influence of a node in a network)
+eigencentr<-eigen_centrality(Asics_rtweet, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_sort<-sort(eigencentr$vector, decreasing = TRUE)
+# View the top 10 users
+eigencentr_sort[1:10]
+```
+
+
+
+
+```{r}
+#  tweet count score - расчет суммы твитов и ретвитов пользователя
+Asics_new1 <- Asics%>%
+  select(screen_name,retweet_screen_name)
+Asics_new1 <- Asics_new1[complete.cases(Asics_new1), ]
+Asics_new1<-data.frame(Asics_new1)
+library(dplyr)
+Asics_new2<-Asics_new1 %>%
+  select(screen_name,retweet_screen_name) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(number1=n())
+
+Asics_new2<-Asics_new2 %>%
+  group_by(retweet_screen_name) %>%
+  dplyr::mutate(number2=n())
+
+Asics_first<-Asics_new2%>%
+  ungroup()%>%
+  select(screen_name,number1)
+
+Asics_second<-Asics_new2%>%
+  ungroup()%>%
+  select(retweet_screen_name,number2)
+
+#расчет результатов и удаление дубликатов
+Asics_new2<-inner_join(Asics_first,Asics_second,by=c("screen_name"="retweet_screen_name"))
+Asics_new2<-Asics_new2%>%
+  ungroup()%>%
+  dplyr::mutate(order=row_number())
+Asics_new2<-Asics_new2%>%
+  group_by(order)%>%
+  dplyr::mutate(tweet_count_score=number1+number2)
+Asics_new_with_score <- Asics_new2[!duplicated(Asics_new2$screen_name),]
+```
+
+
+```{r}
+#  follower rank - расчет соотношения числа подписчиков и подписок
+library(dplyr)
+Asics_new3<-Asics %>%
+  select(screen_name,followers_count,friends_count) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(follower_rank=followers_count/(followers_count+friends_count))
+
+Asics_new3$follower_rank<-as.numeric(Asics_new3$follower_rank)
+
+#удаление дубликатов
+Asics_new3 <- Asics_new3[!duplicated(Asics_new3$screen_name),]
+write.csv(Asics_new3, file = "followers.csv")
+```
+
+```{r}
+#Аутпут получившихся показателей
+table1<-data.frame(out_degree_sort[1:10])
+table2<-data.frame(in_degree_sort[1:10])
+table3<-data.frame(betwn_sort[1:10])
+table4<-data.frame(eigencentr_sort[1:10])
+```
+
+```{r}
+#Визуализация сети
+library(dplyr)
+Asics_viz <-Asics%>%
+  select(screen_name,retweet_screen_name)
+Asics_viz <- Asics_viz[complete.cases(Asics_viz), ]
+
+Asics_viz <-Asics_viz %>%
+  subset(screen_name==c("QuarterbackUniv","SMSBFootball","NCEC_Recruiting","BuckFitz","elitefootballac","NatlPlaymkrsAca","EvaluationCamp","elitegashowcase","CoachBlackwell_","johnsD28","ASICSTennis","noknoijang","ASICSRunningJP","DDNukuri","Kike_Cerecero","DanielBabcock18","fitrapstar","ASICSeurope","arylac74","ASICS_JP","ASICS_India","ASICSUK","templorunner","yoelegicorrer1","ASICSmexico","volei","KiryuYoshihide","lemaitreathle","JaroslawKuzniar","jva_tkjapan","DeenaKastor"))
+Asics_viz<-as.matrix(Asics_viz)
+
+library(igraph)
+Asics_viz_graph <- graph_from_edgelist(el = Asics_viz, directed = TRUE)
+print.igraph(Asics_viz_graph)
+
+library(igraph)
+print.igraph(Asics_viz_graph)
+print.igraph(Asics_viz_graph)
+deg_out <- degree(Asics_viz_graph, mode = c("out"))
+vert_size<-(deg_out*1.5)+8
+set.seed(1234)
+plot.igraph(Asics_viz_graph,axes=FALSE,asp = 0,vertex.shape="square",vertex.size = vert_size,vertex.color = "skyblue1",edge.arrow.size = 0.7,edge.color = "gray26",vertex.label.cex = 0.3,vertex.label.color = "black",rescale=TRUE)
+```
+```{r}
+#Разделение выборки на инфлюенсеров и не инфлюенсеров. Допущение: выше 25% квартиля по количеству подписчиков инфлюенсеры, ниже обычные пользователи
+library(dplyr)
+summary(Asics$followers_count)
+Asics_influencers<-Asics %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count>5741)
+Asics_users<-Asics %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count<5741)
+
+#Необходимо посчитать коэффициент вовлеченность. Формула = (лайки+комментарии+репосты)/количество постов/количество подписчиков *100%
+
+#Инфлюенсеры
+Asics_influencers1<-Asics_influencers%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Asics_influencers<-inner_join(Asics_influencers,Asics_influencers1,by=c("screen_name"="screen_name"))
+Asics_influencers <- Asics_influencers[complete.cases(Asics_influencers), ]
+
+Asics_influencers<-Asics_influencers%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Asics_influencers<-Asics_influencers%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Asics_influencers<-Asics_influencers%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Asics_influencers <- Asics_influencers[!duplicated(Asics_influencers$screen_name),]
+write.csv(Asics_influencers, file = "Asics_influencers.csv")
+
+#Пользователи
+Asics_users1<-Asics_users%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Asics_users<-inner_join(Asics_users,Asics_users1,by=c("screen_name"="screen_name"))
+Asics_users <- Asics_users[complete.cases(Asics_users), ]
+
+Asics_users<-Asics_users%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Asics_users<-Asics_users%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Asics_users<-Asics_users%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Asics_users <- Asics_users[!duplicated(Asics_users$screen_name),]
+write.csv(Asics_users, file = "Asics_users.csv")
+
+
+#Сравнение вовлеченности
+Asics_users$ER_final<-as.numeric(Asics_users$ER_final)
+Asics_users$ER_final[!is.finite(Asics_users$ER_final)] <- 0
+summary(Asics_users$ER_final)
+```
+
+```{r}
+Asics_influencers$ER_final<-as.numeric(Asics_influencers$ER_final)
+Asics_influencers$ER_final[!is.finite(Asics_influencers$ER_final)] <- 0
+summary(Asics_influencers$ER_final)
+```
+
+```{r}
+#Топ verified аккаунтов
+Asics_verified<-Asics%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Asics_verified<-Asics_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Asics_verified$coef)
+
+Asics_not_verified<-Asics%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Asics_not_verified<-Asics_not_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Asics_not_verified$coef)
+
+sum(Asics_not_verified$coef)/sum(Asics_verified$coef)
+695/76
+```
+
+Средние значения метрик
+```{r}
+Asics_features<-Asics %>%
+  select(screen_name,followers_count,verified)
+Asics_features[!duplicated(Asics_features),]
+
+t1<-data.frame(in_degree_sort)
+t2<-data.frame(out_degree_sort)
+t3<-data.frame(betwn_sort)
+t4<-data.frame(eigencentr_sort)
+
+write.csv(t1, file = "t1.csv")
+write.csv(t2, file = "t2.csv")
+write.csv(t3, file = "t3.csv")
+write.csv(t4, file = "t4.csv")
+write.csv(Asics_features, file = "t5.csv")
+```
+
+```{r}
+Asics_verified<-Asics%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Asics_not_verified<-Asics%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Asics_verified <- Asics_verified[complete.cases(Asics_verified), ]
+Asics_not_verified <- Asics_not_verified[complete.cases(Asics_not_verified), ]
+
+Asics_verified<-Asics_verified%>%
+  select(screen_name,retweet_screen_name)
+Asics_verified_matrix<- as.matrix(Asics_verified)
+
+Asics_not_verified<-Asics_not_verified%>%
+  select(screen_name,retweet_screen_name)
+Asics_not_verified_matrix<- as.matrix(Asics_not_verified)
+
+
+library(igraph)
+Asics_111 <- graph_from_edgelist(el = Asics_verified_matrix, directed = TRUE)
+print.igraph(Asics_111)
+
+library(igraph)
+Asics_222 <- graph_from_edgelist(el = Asics_not_verified_matrix, directed = TRUE)
+print.igraph(Asics_222)
+```
+
+```{r}
+library(igraph)
+
+out_degree_111 <- degree(Asics_111, mode = c("out"))
+out_degree_222 <- degree(Asics_222, mode = c("out"))
+
+in_degree_111 <- degree(Asics_111, mode = c("in"))
+in_degree_222 <- degree(Asics_222, mode = c("in"))
+
+betwn_111 <- betweenness(Asics_111, directed = TRUE)
+betwn_222 <- betweenness(Asics_222, directed = TRUE)
+
+eigencentr_111<-eigen_centrality(Asics_111, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_222<-eigen_centrality(Asics_222, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_111<-data.frame(out_degree_111,in_degree_111,betwn_111,eigencentr_111$vector)
+tabl_222<-data.frame(out_degree_222,in_degree_222,betwn_222,eigencentr_222$vector)
+
+write.csv(tabl_111, file = "tabl_111.csv")
+write.csv(tabl_222, file = "tabl_222.csv")
+```
+
+```{r}
+ConComp = components(Asics_rtweet)
+ConComp$no
+```

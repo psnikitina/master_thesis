@@ -1,0 +1,335 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+#Загрузка необходимых пакетов
+install.packages('rtweet')
+install.packages('dplyr')
+install.packages('igraph')
+```
+
+```{r}
+#Загрузка данных по 10 спортивным брендам
+NewBalance<-read.csv('dataNbalance.csv')
+```
+
+NewBalance
+```{r}
+#Подготовка данных по NewBalance
+library(rtweet)
+NewBalance$created_at<-as.numeric(NewBalance$created_at)
+NewBalance$display_text_width<-as.numeric(NewBalance$display_text_width)
+NewBalance$is_quote<-as.logical(NewBalance$is_quote)
+NewBalance$is_retweet<-as.logical(NewBalance$is_retweet)
+NewBalance$favorite_count<-as.numeric(NewBalance$favorite_count)
+NewBalance$retweet_count<-as.numeric(NewBalance$retweet_count)
+NewBalance$quote_count<-as.numeric(NewBalance$quote_count)
+NewBalance$reply_count<-as.numeric(NewBalance$reply_count)
+NewBalance$hashtags<-as.character(NewBalance$hashtags)
+NewBalance$quoted_created_at<-as.numeric(NewBalance$quoted_created_at)
+NewBalance$quoted_favorite_count<-as.numeric(NewBalance$quoted_favorite_count)
+NewBalance$quoted_retweet_count<-as.numeric(NewBalance$quoted_retweet_count)
+NewBalance$quoted_followers_count<-as.numeric(NewBalance$quoted_followers_count)
+NewBalance$quoted_friends_count-as.numeric(NewBalance$quoted_friends_count)
+NewBalance$quoted_statuses_count-as.numeric(NewBalance$quoted_statuses_count)
+NewBalance$quoted_verified-as.logical(NewBalance$quoted_verified)
+
+library(dplyr)
+NewBalance_new <- NewBalance%>%
+  select(screen_name,retweet_screen_name)
+```
+
+```{r}
+#Начало сетевого анализа - удаление пропущенных данных, подготовка базовой матрицы, оформление двухстолбцовой матрицы для расчета метрик
+NewBalance_new <- NewBalance_new[complete.cases(NewBalance_new), ]
+NewBalance_for_matrix<-NewBalance_new%>%
+  select(screen_name,retweet_screen_name)
+NewBalance_new_matrix<- as.matrix(NewBalance_for_matrix)
+
+
+library(igraph)
+NewBalance_rtweet <- graph_from_edgelist(el = NewBalance_new_matrix, directed = TRUE)
+print.igraph(NewBalance_rtweet)
+```
+```{r}
+library(igraph)
+# Calculate out-degree (The number of edges going out of a vertex in a directed graph)
+out_degree <- degree(NewBalance_rtweet, mode = c("out"))
+out_degree_sort <- sort(out_degree, decreasing = TRUE)
+# View the top 10 users
+out_degree_sort[1:10]
+```
+
+```{r}
+# Calculate in-degree (The number of edges coming into a vertex in a directed graph)
+in_degree <- degree(NewBalance_rtweet, mode = c("in"))
+in_degree_sort <- sort(in_degree, decreasing = TRUE)
+# View the top 10 users
+in_degree_sort[1:10]
+```
+```{r}
+# Calculate betweeness centrality (measures the number of times a node lies on the shortest path between other nodes)
+betwn <- betweenness(NewBalance_rtweet, directed = TRUE)
+betwn_sort <- betwn %>%
+  sort(decreasing = TRUE) %>%
+  round()
+# View the top 10 users
+betwn_sort[1:10]
+```
+```{r}
+# Calculate eigenvector centrality (measures the influence of a node in a network)
+eigencentr<-eigen_centrality(NewBalance_rtweet, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_sort<-sort(eigencentr$vector, decreasing = TRUE)
+# View the top 10 users
+eigencentr_sort[1:10]
+```
+
+
+
+
+```{r}
+#  tweet count score - расчет суммы твитов и ретвитов пользователя
+NewBalance_new1 <- NewBalance%>%
+  select(screen_name,retweet_screen_name)
+NewBalance_new1 <- NewBalance_new1[complete.cases(NewBalance_new1), ]
+NewBalance_new1<-data.frame(NewBalance_new1)
+library(dplyr)
+NewBalance_new2<-NewBalance_new1 %>%
+  select(screen_name,retweet_screen_name) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(number1=n())
+
+NewBalance_new2<-NewBalance_new2 %>%
+  group_by(retweet_screen_name) %>%
+  dplyr::mutate(number2=n())
+
+NewBalance_first<-NewBalance_new2%>%
+  ungroup()%>%
+  select(screen_name,number1)
+
+NewBalance_second<-NewBalance_new2%>%
+  ungroup()%>%
+  select(retweet_screen_name,number2)
+
+#расчет результатов и удаление дубликатов
+NewBalance_new2<-inner_join(NewBalance_first,NewBalance_second,by=c("screen_name"="retweet_screen_name"))
+NewBalance_new2<-NewBalance_new2%>%
+  ungroup()%>%
+  dplyr::mutate(order=row_number())
+NewBalance_new2<-NewBalance_new2%>%
+  group_by(order)%>%
+  dplyr::mutate(tweet_count_score=number1+number2)
+NewBalance_new_with_score <- NewBalance_new2[!duplicated(NewBalance_new2$screen_name),]
+```
+
+
+```{r}
+#  follower rank - расчет соотношения числа подписчиков и подписок
+library(dplyr)
+NewBalance_new3<-NewBalance %>%
+  select(screen_name,followers_count,friends_count) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(follower_rank=followers_count/(followers_count+friends_count))
+
+NewBalance_new3$follower_rank<-as.numeric(NewBalance_new3$follower_rank)
+
+#удаление дубликатов
+NewBalance_new3 <- NewBalance_new3[!duplicated(NewBalance_new3$screen_name),]
+write.csv(NewBalance_new3, file = "followers.csv")
+```
+
+```{r}
+#Аутпут получившихся показателей
+table1<-data.frame(out_degree_sort[1:10])
+table2<-data.frame(in_degree_sort[1:10])
+table3<-data.frame(betwn_sort[1:10])
+table4<-data.frame(eigencentr_sort[1:10])
+```
+
+```{r}
+#Визуализация сети
+library(dplyr)
+NewBalance_viz <-NewBalance%>%
+  select(screen_name,retweet_screen_name)
+NewBalance_viz <- NewBalance_viz[complete.cases(NewBalance_viz), ]
+
+NewBalance_viz <-NewBalance_viz %>%
+  subset(screen_name==c("_JeremyBooth","pandaichi724","newbalancehoops","kimita1719","ftrstarsseries","norizosan","ftrstarsscout","Program15BB","NB_Baseball","chriscapozzi5","now_d1","tamakao","rmoen24","paulinelee4dm","yskmsakyoko","NBA","NBFootball","MrMet","Dm824Kana","tom1582_6","onikunarasuki","NorCalU1","FtrSSFoundation","Chase_Denton_","NBAKicks","uninterrupted","Mets","nyrr","gradydoctor","robertoenriq"))
+NewBalance_viz<-as.matrix(NewBalance_viz)
+
+library(igraph)
+NewBalance_viz_graph <- graph_from_edgelist(el = NewBalance_viz, directed = TRUE)
+print.igraph(NewBalance_viz_graph)
+
+library(igraph)
+print.igraph(NewBalance_viz_graph)
+print.igraph(NewBalance_viz_graph)
+deg_out <- degree(NewBalance_viz_graph, mode = c("out"))
+vert_size<-(deg_out*1.5)+8
+set.seed(1234)
+plot.igraph(NewBalance_viz_graph,axes=FALSE,asp = 0,vertex.shape="square",vertex.size = vert_size,vertex.color = "skyblue1",edge.arrow.size = 0.7,edge.color = "gray26",vertex.label.cex = 0.3,vertex.label.color = "black",rescale=TRUE)
+```
+```{r}
+#Разделение выборки на инфлюенсеров и не инфлюенсеров. Допущение: выше 25% квартиля по количеству подписчиков инфлюенсеры, ниже обычные пользователи
+library(dplyr)
+summary(NewBalance$followers_count)
+NewBalance_influencers<-NewBalance %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count>1779)
+NewBalance_users<-NewBalance %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count<1779)
+
+#Необходимо посчитать коэффициент вовлеченность. Формула = (лайки+комментарии+репосты)/количество постов/количество подписчиков *100%
+
+#Инфлюенсеры
+NewBalance_influencers1<-NewBalance_influencers%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+NewBalance_influencers<-inner_join(NewBalance_influencers,NewBalance_influencers1,by=c("screen_name"="screen_name"))
+NewBalance_influencers <- NewBalance_influencers[complete.cases(NewBalance_influencers), ]
+
+NewBalance_influencers<-NewBalance_influencers%>%
+  mutate(upper=favorite_count+retweet_count)
+
+NewBalance_influencers<-NewBalance_influencers%>%
+  mutate(ER=(upper/followers_count)*100)
+
+NewBalance_influencers<-NewBalance_influencers%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+NewBalance_influencers <- NewBalance_influencers[!duplicated(NewBalance_influencers$screen_name),]
+write.csv(NewBalance_influencers, file = "NewBalance_influencers.csv")
+
+#Пользователи
+NewBalance_users1<-NewBalance_users%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+NewBalance_users<-inner_join(NewBalance_users,NewBalance_users1,by=c("screen_name"="screen_name"))
+NewBalance_users <- NewBalance_users[complete.cases(NewBalance_users), ]
+
+NewBalance_users<-NewBalance_users%>%
+  mutate(upper=favorite_count+retweet_count)
+
+NewBalance_users<-NewBalance_users%>%
+  mutate(ER=(upper/followers_count)*100)
+
+NewBalance_users<-NewBalance_users%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+NewBalance_users <- NewBalance_users[!duplicated(NewBalance_users$screen_name),]
+write.csv(NewBalance_users, file = "NewBalance_users.csv")
+
+
+#Сравнение вовлеченности
+NewBalance_users$ER_final<-as.numeric(NewBalance_users$ER_final)
+NewBalance_users$ER_final[!is.finite(NewBalance_users$ER_final)] <- 0
+summary(NewBalance_users$ER_final)
+```
+
+```{r}
+NewBalance_influencers$ER_final<-as.numeric(NewBalance_influencers$ER_final)
+NewBalance_influencers$ER_final[!is.finite(NewBalance_influencers$ER_final)] <- 0
+summary(NewBalance_influencers$ER_final)
+```
+```{r}
+#Топ verified аккаунтов
+NewBalance_verified<-NewBalance%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+NewBalance_verified<-NewBalance_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(NewBalance_verified$coef)
+
+NewBalance_not_verified<-NewBalance%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+NewBalance_not_verified<-NewBalance_not_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(NewBalance_not_verified$coef)
+
+sum(NewBalance_not_verified$coef)/sum(NewBalance_verified$coef)
+2576/29
+```
+
+Средние значения метрик
+```{r}
+NewBalance_features<-NewBalance %>%
+  select(screen_name,followers_count,verified)
+NewBalance_features[!duplicated(NewBalance_features),]
+
+t1<-data.frame(in_degree_sort)
+t2<-data.frame(out_degree_sort)
+t3<-data.frame(betwn_sort)
+t4<-data.frame(eigencentr_sort)
+
+write.csv(t1, file = "t1.csv")
+write.csv(t2, file = "t2.csv")
+write.csv(t3, file = "t3.csv")
+write.csv(t4, file = "t4.csv")
+write.csv(NewBalance_features, file = "t5.csv")
+```
+
+```{r}
+NewBalance_verified<-NewBalance%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+NewBalance_not_verified<-NewBalance%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+NewBalance_verified <- NewBalance_verified[complete.cases(NewBalance_verified), ]
+NewBalance_not_verified <- NewBalance_not_verified[complete.cases(NewBalance_not_verified), ]
+
+NewBalance_verified<-NewBalance_verified%>%
+  select(screen_name,retweet_screen_name)
+NewBalance_verified_matrix<- as.matrix(NewBalance_verified)
+
+NewBalance_not_verified<-NewBalance_not_verified%>%
+  select(screen_name,retweet_screen_name)
+NewBalance_not_verified_matrix<- as.matrix(NewBalance_not_verified)
+
+
+library(igraph)
+NewBalance_111 <- graph_from_edgelist(el = NewBalance_verified_matrix, directed = TRUE)
+print.igraph(NewBalance_111)
+
+library(igraph)
+NewBalance_222 <- graph_from_edgelist(el = NewBalance_not_verified_matrix, directed = TRUE)
+print.igraph(NewBalance_222)
+```
+
+```{r}
+library(igraph)
+
+out_degree_111 <- degree(NewBalance_111, mode = c("out"))
+out_degree_222 <- degree(NewBalance_222, mode = c("out"))
+
+in_degree_111 <- degree(NewBalance_111, mode = c("in"))
+in_degree_222 <- degree(NewBalance_222, mode = c("in"))
+
+betwn_111 <- betweenness(NewBalance_111, directed = TRUE)
+betwn_222 <- betweenness(NewBalance_222, directed = TRUE)
+
+eigencentr_111<-eigen_centrality(NewBalance_111, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_222<-eigen_centrality(NewBalance_222, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_111<-data.frame(out_degree_111,in_degree_111,betwn_111,eigencentr_111$vector)
+tabl_222<-data.frame(out_degree_222,in_degree_222,betwn_222,eigencentr_222$vector)
+
+write.csv(tabl_111, file = "tabl_111.csv")
+write.csv(tabl_222, file = "tabl_222.csv")
+```
+
+```{r}
+ConComp = components(NewBalance_rtweet)
+ConComp$no
+```

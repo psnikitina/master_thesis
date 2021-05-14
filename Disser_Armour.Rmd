@@ -1,0 +1,337 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+#Загрузка необходимых пакетов
+install.packages('rtweet')
+install.packages('dplyr')
+install.packages('igraph')
+```
+
+```{r}
+#Загрузка данных по 10 спортивным брендам
+Under<-read.csv('dataArmour.csv')
+```
+
+Under
+```{r}
+#Подготовка данных по Under
+library(rtweet)
+Under$created_at<-as.numeric(Under$created_at)
+Under$display_text_width<-as.numeric(Under$display_text_width)
+Under$is_quote<-as.logical(Under$is_quote)
+Under$is_retweet<-as.logical(Under$is_retweet)
+Under$favorite_count<-as.numeric(Under$favorite_count)
+Under$retweet_count<-as.numeric(Under$retweet_count)
+Under$quote_count<-as.numeric(Under$quote_count)
+Under$reply_count<-as.numeric(Under$reply_count)
+Under$hashtags<-as.character(Under$hashtags)
+Under$quoted_created_at<-as.numeric(Under$quoted_created_at)
+Under$quoted_favorite_count<-as.numeric(Under$quoted_favorite_count)
+Under$quoted_retweet_count<-as.numeric(Under$quoted_retweet_count)
+Under$quoted_followers_count<-as.numeric(Under$quoted_followers_count)
+Under$quoted_friends_count-as.numeric(Under$quoted_friends_count)
+Under$quoted_statuses_count-as.numeric(Under$quoted_statuses_count)
+Under$quoted_verified-as.logical(Under$quoted_verified)
+
+library(dplyr)
+Under_new <- Under%>%
+  select(screen_name,retweet_screen_name)
+```
+
+```{r}
+#Начало сетевого анализа - удаление пропущенных данных, подготовка базовой матрицы, оформление двухстолбцовой матрицы для расчета метрик
+Under_new <- Under_new[complete.cases(Under_new), ]
+Under_for_matrix<-Under_new%>%
+  select(screen_name,retweet_screen_name)
+Under_new_matrix<- as.matrix(Under_for_matrix)
+
+
+library(igraph)
+Under_rtweet <- graph_from_edgelist(el = Under_new_matrix, directed = TRUE)
+print.igraph(Under_rtweet)
+```
+```{r}
+library(igraph)
+# Calculate out-degree (The number of edges going out of a vertex in a directed graph)
+out_degree <- degree(Under_rtweet, mode = c("out"))
+out_degree_sort <- sort(out_degree, decreasing = TRUE)
+# View the top 10 users
+out_degree_sort[1:10]
+```
+
+```{r}
+# Calculate in-degree (The number of edges coming into a vertex in a directed graph)
+in_degree <- degree(Under_rtweet, mode = c("in"))
+in_degree_sort <- sort(in_degree, decreasing = TRUE)
+# View the top 10 users
+in_degree_sort[1:10]
+```
+```{r}
+# Calculate betweeness centrality (measures the number of times a node lies on the shortest path between other nodes)
+betwn <- betweenness(Under_rtweet, directed = TRUE)
+betwn_sort <- betwn %>%
+  sort(decreasing = TRUE) %>%
+  round()
+# View the top 10 users
+betwn_sort[1:10]
+```
+```{r}
+# Calculate eigenvector centrality (measures the influence of a node in a network)
+eigencentr<-eigen_centrality(Under_rtweet, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_sort<-sort(eigencentr$vector, decreasing = TRUE)
+# View the top 10 users
+eigencentr_sort[1:10]
+```
+
+
+
+
+```{r}
+#  tweet count score - расчет суммы твитов и ретвитов пользователя
+Under_new1 <- Under%>%
+  select(screen_name,retweet_screen_name)
+Under_new1 <- Under_new1[complete.cases(Under_new1), ]
+Under_new1<-data.frame(Under_new1)
+library(dplyr)
+Under_new2<-Under_new1 %>%
+  select(screen_name,retweet_screen_name) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(number1=n())
+
+Under_new2<-Under_new2 %>%
+  group_by(retweet_screen_name) %>%
+  dplyr::mutate(number2=n())
+
+Under_first<-Under_new2%>%
+  ungroup()%>%
+  select(screen_name,number1)
+
+Under_second<-Under_new2%>%
+  ungroup()%>%
+  select(retweet_screen_name,number2)
+
+#расчет результатов и удаление дубликатов
+Under_new2<-inner_join(Under_first,Under_second,by=c("screen_name"="retweet_screen_name"))
+Under_new2<-Under_new2%>%
+  ungroup()%>%
+  dplyr::mutate(order=row_number())
+Under_new2<-Under_new2%>%
+  group_by(order)%>%
+  dplyr::mutate(tweet_count_score=number1+number2)
+Under_new_with_score <- Under_new2[!duplicated(Under_new2$screen_name),]
+```
+
+
+```{r}
+#  follower rank - расчет соотношения числа подписчиков и подписок
+library(dplyr)
+summary(Under$followers_count)
+Under_new3<-Under %>%
+  select(screen_name,followers_count,friends_count) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(follower_rank=followers_count/(followers_count+friends_count))
+
+Under_new3$follower_rank<-as.numeric(Under_new3$follower_rank)
+
+#удаление дубликатов
+Under_new3 <- Under_new3[!duplicated(Under_new3$screen_name),]
+write.csv(Under_new3, file = "followers.csv")
+```
+
+```{r}
+#Аутпут получившихся показателей
+table1<-data.frame(out_degree_sort[1:10])
+table2<-data.frame(in_degree_sort[1:10])
+table3<-data.frame(betwn_sort[1:10])
+table4<-data.frame(eigencentr_sort[1:10])
+```
+
+```{r}
+#Визуализация сети
+library(dplyr)
+Under_viz <-Under%>%
+  select(screen_name,retweet_screen_name)
+Under_viz <- Under_viz[complete.cases(Under_viz), ]
+
+Under_viz <-Under_viz %>%
+  subset(screen_name==c("UnderArmour","JacobLashinsky","JoshRStewart01","LazyManager","Amberlicious24","UAFootball","lindseyvonn","KJemaine06","joonas6","broctalbot34","Pro1Basketball","k4lvin18","AZSelectBoysBB","BSNSPORTS_Women","clhstxathletics","Polak2Ewelina","DomeCorp","Shad_Gadson","FourNineSevenFo","GreggRosenberg1","3Rsports1","ajcfreak76","areacodes","TM2CB","DaPhilosopherMF","teddyriner","AtiliaCLPT","Jeerro","TomLuginbill","belk","TangerOutlets","mo_jaabs"))
+Under_viz<-as.matrix(Under_viz)
+
+library(igraph)
+Under_viz_graph <- graph_from_edgelist(el = Under_viz, directed = TRUE)
+print.igraph(Under_viz_graph)
+
+library(igraph)
+print.igraph(Under_viz_graph)
+print.igraph(Under_viz_graph)
+deg_out <- degree(Under_viz_graph, mode = c("out"))
+vert_size<-(deg_out*1.5)+8
+set.seed(1234)
+plot.igraph(Under_viz_graph,axes=FALSE,asp = 0,vertex.shape="square",vertex.size = vert_size,vertex.color = "skyblue1",edge.arrow.size = 0.7,edge.color = "gray26",vertex.label.cex = 0.3,vertex.label.color = "black",rescale=TRUE)
+```
+```{r}
+#Разделение выборки на инфлюенсеров и не инфлюенсеров. Допущение: выше 25% квартиля по количеству подписчиков инфлюенсеры, ниже обычные пользователи
+library(dplyr)
+summary(Under$followers_count)
+Under_influencers<-Under %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count>1269)
+Under_users<-Under %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count<1269)
+
+#Необходимо посчитать коэффициент вовлеченность. Формула = (лайки+комментарии+репосты)/количество постов/количество подписчиков *100%
+
+#Инфлюенсеры
+Under_influencers1<-Under_influencers%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Under_influencers<-inner_join(Under_influencers,Under_influencers1,by=c("screen_name"="screen_name"))
+Under_influencers <- Under_influencers[complete.cases(Under_influencers), ]
+
+Under_influencers<-Under_influencers%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Under_influencers<-Under_influencers%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Under_influencers<-Under_influencers%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Under_influencers <- Under_influencers[!duplicated(Under_influencers$screen_name),]
+write.csv(Under_influencers, file = "Under_influencers.csv")
+
+#Пользователи
+Under_users1<-Under_users%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Under_users<-inner_join(Under_users,Under_users1,by=c("screen_name"="screen_name"))
+Under_users <- Under_users[complete.cases(Under_users), ]
+
+Under_users<-Under_users%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Under_users<-Under_users%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Under_users<-Under_users%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Under_users <- Under_users[!duplicated(Under_users$screen_name),]
+write.csv(Under_users, file = "Under_users.csv")
+
+
+#Сравнение вовлеченности
+Under_users$ER_final<-as.numeric(Under_users$ER_final)
+Under_users$ER_final[!is.finite(Under_users$ER_final)] <- 0
+summary(Under_users$ER_final)
+```
+
+```{r}
+Under_influencers$ER_final<-as.numeric(Under_influencers$ER_final)
+Under_influencers$ER_final[!is.finite(Under_influencers$ER_final)] <- 0
+summary(Under_influencers$ER_final)
+```
+
+```{r}
+#Топ verified аккаунтов
+Under_verified<-Under%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Under_verified<-Under_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Under_verified$coef)
+
+Under_not_verified<-Under%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Under_not_verified<-Under_not_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Under_not_verified$coef)
+
+sum(Under_not_verified$coef)/sum(Under_verified$coef)
+612/31
+```
+
+Средние значения метрик
+```{r}
+Under_features<-Under %>%
+  select(screen_name,followers_count,verified)
+Under_features[!duplicated(Under_features),]
+
+t1<-data.frame(in_degree_sort)
+t2<-data.frame(out_degree_sort)
+t3<-data.frame(betwn_sort)
+t4<-data.frame(eigencentr_sort)
+
+write.csv(t1, file = "t1.csv")
+write.csv(t2, file = "t2.csv")
+write.csv(t3, file = "t3.csv")
+write.csv(t4, file = "t4.csv")
+write.csv(Under_features, file = "t5.csv")
+```
+
+```{r}
+Under_verified<-Under%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Under_not_verified<-Under%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Under_verified <- Under_verified[complete.cases(Under_verified), ]
+Under_not_verified <- Under_not_verified[complete.cases(Under_not_verified), ]
+
+Under_verified<-Under_verified%>%
+  select(screen_name,retweet_screen_name)
+Under_verified_matrix<- as.matrix(Under_verified)
+
+Under_not_verified<-Under_not_verified%>%
+  select(screen_name,retweet_screen_name)
+Under_not_verified_matrix<- as.matrix(Under_not_verified)
+
+
+library(igraph)
+Under_111 <- graph_from_edgelist(el = Under_verified_matrix, directed = TRUE)
+print.igraph(Under_111)
+
+library(igraph)
+Under_222 <- graph_from_edgelist(el = Under_not_verified_matrix, directed = TRUE)
+print.igraph(Under_222)
+```
+
+```{r}
+library(igraph)
+
+out_degree_111 <- degree(Under_111, mode = c("out"))
+out_degree_222 <- degree(Under_222, mode = c("out"))
+
+in_degree_111 <- degree(Under_111, mode = c("in"))
+in_degree_222 <- degree(Under_222, mode = c("in"))
+
+betwn_111 <- betweenness(Under_111, directed = TRUE)
+betwn_222 <- betweenness(Under_222, directed = TRUE)
+
+eigencentr_111<-eigen_centrality(Under_111, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_222<-eigen_centrality(Under_222, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_111<-data.frame(out_degree_111,in_degree_111,betwn_111,eigencentr_111$vector)
+tabl_222<-data.frame(out_degree_222,in_degree_222,betwn_222,eigencentr_222$vector)
+
+write.csv(tabl_111, file = "tabl_111.csv")
+write.csv(tabl_222, file = "tabl_222.csv")
+```
+
+```{r}
+ConComp = components(Under_rtweet)
+ConComp$no
+```

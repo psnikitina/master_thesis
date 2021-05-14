@@ -1,0 +1,387 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+#Загрузка необходимых пакетов
+install.packages('rtweet')
+install.packages('dplyr')
+install.packages('igraph')
+```
+
+```{r}
+#Загрузка данных по 10 спортивным брендам
+Puma<-read.csv('dataPuma.csv')
+```
+
+Puma
+```{r}
+#Подготовка данных по Puma
+library(rtweet)
+Puma$created_at<-as.numeric(Puma$created_at)
+Puma$display_text_width<-as.numeric(Puma$display_text_width)
+Puma$is_quote<-as.logical(Puma$is_quote)
+Puma$is_retweet<-as.logical(Puma$is_retweet)
+Puma$favorite_count<-as.numeric(Puma$favorite_count)
+Puma$retweet_count<-as.numeric(Puma$retweet_count)
+Puma$quote_count<-as.numeric(Puma$quote_count)
+Puma$reply_count<-as.numeric(Puma$reply_count)
+Puma$hashtags<-as.character(Puma$hashtags)
+Puma$quoted_created_at<-as.numeric(Puma$quoted_created_at)
+Puma$quoted_favorite_count<-as.numeric(Puma$quoted_favorite_count)
+Puma$quoted_retweet_count<-as.numeric(Puma$quoted_retweet_count)
+Puma$quoted_followers_count<-as.numeric(Puma$quoted_followers_count)
+Puma$quoted_friends_count-as.numeric(Puma$quoted_friends_count)
+Puma$quoted_statuses_count-as.numeric(Puma$quoted_statuses_count)
+Puma$quoted_verified-as.logical(Puma$quoted_verified)
+
+library(dplyr)
+Puma_new <- Puma%>%
+  select(screen_name,retweet_screen_name)
+```
+
+```{r}
+#Начало сетевого анализа - удаление пропущенных данных, подготовка базовой матрицы, оформление двухстолбцовой матрицы для расчета метрик
+Puma_new <- Puma_new[complete.cases(Puma_new), ]
+Puma_for_matrix<-Puma_new%>%
+  select(screen_name,retweet_screen_name)
+Puma_new_matrix<- as.matrix(Puma_for_matrix)
+
+
+library(igraph)
+Puma_rtweet <- graph_from_edgelist(el = Puma_new_matrix, directed = TRUE)
+print.igraph(Puma_rtweet)
+```
+```{r}
+library(igraph)
+# Calculate out-degree (The number of edges going out of a vertex in a directed graph)
+out_degree <- degree(Puma_rtweet, mode = c("out"))
+out_degree_sort <- sort(out_degree, decreasing = TRUE)
+# View the top 10 users
+out_degree_sort[1:10]
+```
+
+```{r}
+# Calculate in-degree (The number of edges coming into a vertex in a directed graph)
+in_degree <- degree(Puma_rtweet, mode = c("in"))
+in_degree_sort <- sort(in_degree, decreasing = TRUE)
+# View the top 10 users
+in_degree_sort[1:10]
+```
+```{r}
+# Calculate betweeness centrality (measures the number of times a node lies on the shortest path between other nodes)
+betwn <- betweenness(Puma_rtweet, directed = TRUE)
+betwn_sort <- betwn %>%
+  sort(decreasing = TRUE) %>%
+  round()
+# View the top 10 users
+betwn_sort[1:10]
+```
+```{r}
+# Calculate eigenvector centrality (measures the influence of a node in a network)
+eigencentr<-eigen_centrality(Puma_rtweet, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_sort<-sort(eigencentr$vector, decreasing = TRUE)
+# View the top 10 users
+eigencentr_sort[1:10]
+```
+
+
+
+
+```{r}
+#  tweet count score - расчет суммы твитов и ретвитов пользователя
+Puma_new1 <- Puma%>%
+  select(screen_name,retweet_screen_name)
+Puma_new1 <- Puma_new1[complete.cases(Puma_new1), ]
+Puma_new1<-data.frame(Puma_new1)
+library(dplyr)
+Puma_new2<-Puma_new1 %>%
+  select(screen_name,retweet_screen_name) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(number1=n())
+
+Puma_new2<-Puma_new2 %>%
+  group_by(retweet_screen_name) %>%
+  dplyr::mutate(number2=n())
+
+Puma_first<-Puma_new2%>%
+  ungroup()%>%
+  select(screen_name,number1)
+
+Puma_second<-Puma_new2%>%
+  ungroup()%>%
+  select(retweet_screen_name,number2)
+
+#расчет результатов и удаление дубликатов
+Puma_new2<-inner_join(Puma_first,Puma_second,by=c("screen_name"="retweet_screen_name"))
+Puma_new2<-Puma_new2%>%
+  ungroup()%>%
+  dplyr::mutate(order=row_number())
+Puma_new2<-Puma_new2%>%
+  group_by(order)%>%
+  dplyr::mutate(tweet_count_score=number1+number2)
+Puma_new_with_score <- Puma_new2[!duplicated(Puma_new2$screen_name),]
+```
+
+
+```{r}
+#  follower rank - расчет соотношения числа подписчиков и подписок
+library(dplyr)
+Puma_new3<-Puma %>%
+  select(screen_name,followers_count,friends_count) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(follower_rank=followers_count/(followers_count+friends_count))
+
+Puma_new3$follower_rank<-as.numeric(Puma_new3$follower_rank)
+
+#удаление дубликатов
+Puma_new3 <- Puma_new3[!duplicated(Puma_new3$screen_name),]
+write.csv(Puma_new3, file = "followers.csv")
+```
+
+```{r}
+#Аутпут получившихся показателей
+table1<-data.frame(out_degree_sort[1:10])
+table2<-data.frame(in_degree_sort[1:10])
+table3<-data.frame(betwn_sort[1:10])
+table4<-data.frame(eigencentr_sort[1:10])
+```
+
+```{r}
+#Визуализация сети
+library(dplyr)
+Puma_viz <-Puma%>%
+  select(screen_name,retweet_screen_name)
+Puma_viz <- Puma_viz[complete.cases(Puma_viz), ]
+
+Puma_viz <-Puma_viz %>%
+  subset(screen_name==c("OnzeMondial","Eurosport_FR","BigBoular","Atchil1","Vilway75", "Rkerlo1","Insive3","ZeCoco3","Oncepa1","Mocula3","Running_Network","SadioMane10FP","PUMAArgentina","airlavillenie","ImKrisLawrence","beinsports_FR","73Kretzschmar","CotedIvoire_off","shamsi90","Netball_SA","tenga01100","Footballogue","intrepidfoxgg","oaklandrootssc","AdoreLM31","s0laro","As_Fan_Radio","ShadineVDM","cathare311","RThronel","bobtorresphoto"))
+Puma_viz<-as.matrix(Puma_viz)
+
+library(igraph)
+Puma_viz_graph <- graph_from_edgelist(el = Puma_viz, directed = TRUE)
+print.igraph(Puma_viz_graph)
+
+library(igraph)
+print.igraph(Puma_viz_graph)
+print.igraph(Puma_viz_graph)
+deg_out <- degree(Puma_viz_graph, mode = c("out"))
+vert_size<-(deg_out*1.5)+8
+set.seed(1234)
+plot.igraph(Puma_viz_graph,axes=FALSE,asp = 0,vertex.shape="square",vertex.size = vert_size,vertex.color = "skyblue1",edge.arrow.size = 0.7,edge.color = "gray26",vertex.label.cex = 0.3,vertex.label.color = "black",rescale=TRUE)
+```
+```{r}
+#Разделение выборки на инфлюенсеров и не инфлюенсеров. Допущение: выше 25% квартиля по количеству подписчиков инфлюенсеры, ниже обычные пользователи
+library(dplyr)
+summary(Puma$followers_count)
+Puma_influencers<-Puma %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count>243.3)
+Puma_users<-Puma %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count<243.3)
+
+#Необходимо посчитать коэффициент вовлеченность. Формула = (лайки+комментарии+репосты)/количество постов/количество подписчиков *100%
+
+#Инфлюенсеры
+Puma_influencers1<-Puma_influencers%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Puma_influencers<-inner_join(Puma_influencers,Puma_influencers1,by=c("screen_name"="screen_name"))
+Puma_influencers <- Puma_influencers[complete.cases(Puma_influencers), ]
+
+Puma_influencers<-Puma_influencers%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Puma_influencers<-Puma_influencers%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Puma_influencers<-Puma_influencers%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Puma_influencers <- Puma_influencers[!duplicated(Puma_influencers$screen_name),]
+write.csv(Puma_influencers, file = "Puma_influencers.csv")
+
+#Пользователи
+Puma_users1<-Puma_users%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Puma_users<-inner_join(Puma_users,Puma_users1,by=c("screen_name"="screen_name"))
+Puma_users <- Puma_users[complete.cases(Puma_users), ]
+
+Puma_users<-Puma_users%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Puma_users<-Puma_users%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Puma_users<-Puma_users%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Puma_users <- Puma_users[!duplicated(Puma_users$screen_name),]
+write.csv(Puma_users, file = "Puma_users.csv")
+
+
+#Сравнение вовлеченности
+Puma_users$ER_final<-as.numeric(Puma_users$ER_final)
+Puma_users$ER_final[!is.finite(Puma_users$ER_final)] <- 0
+summary(Puma_users$ER_final)
+```
+
+```{r}
+Puma_influencers$ER_final<-as.numeric(Puma_influencers$ER_final)
+Puma_influencers$ER_final[!is.finite(Puma_influencers$ER_final)] <- 0
+summary(Puma_influencers$ER_final)
+```
+```{r}
+#Топ verified аккаунтов
+Puma_verified<-Puma%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Puma_verified<-Puma_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Puma_verified$coef)
+
+Puma_not_verified<-Puma%>%
+  select(screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Puma_not_verified<-Puma_not_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Puma_not_verified$coef)
+
+sum(Puma_not_verified$coef)/sum(Puma_verified$coef)
+3449/27
+```
+
+Средние значения метрик
+```{r}
+Puma_features<-Puma %>%
+  select(screen_name,followers_count,verified)
+Puma_features[!duplicated(Puma_features),]
+
+t1<-data.frame(in_degree_sort)
+t2<-data.frame(out_degree_sort)
+t3<-data.frame(betwn_sort)
+t4<-data.frame(eigencentr_sort)
+
+write.csv(t1, file = "t1.csv")
+write.csv(t2, file = "t2.csv")
+write.csv(t3, file = "t3.csv")
+write.csv(t4, file = "t4.csv")
+write.csv(Puma_features, file = "t5.csv")
+```
+
+```{r}
+Puma_verified<-Puma%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Puma_not_verified<-Puma%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Puma_verified <- Puma_verified[complete.cases(Puma_verified), ]
+Puma_not_verified <- Puma_not_verified[complete.cases(Puma_not_verified), ]
+
+Puma_verified<-Puma_verified%>%
+  select(screen_name,retweet_screen_name)
+Puma_verified_matrix<- as.matrix(Puma_verified)
+
+Puma_not_verified<-Puma_not_verified%>%
+  select(screen_name,retweet_screen_name)
+Puma_not_verified_matrix<- as.matrix(Puma_not_verified)
+
+
+library(igraph)
+Puma_111 <- graph_from_edgelist(el = Puma_verified_matrix, directed = TRUE)
+print.igraph(Puma_111)
+
+library(igraph)
+Puma_222 <- graph_from_edgelist(el = Puma_not_verified_matrix, directed = TRUE)
+print.igraph(Puma_222)
+```
+
+```{r}
+library(igraph)
+
+out_degree_111 <- degree(Puma_111, mode = c("out"))
+out_degree_222 <- degree(Puma_222, mode = c("out"))
+
+in_degree_111 <- degree(Puma_111, mode = c("in"))
+in_degree_222 <- degree(Puma_222, mode = c("in"))
+
+betwn_111 <- betweenness(Puma_111, directed = TRUE)
+betwn_222 <- betweenness(Puma_222, directed = TRUE)
+
+eigencentr_111<-eigen_centrality(Puma_111, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_222<-eigen_centrality(Puma_222, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_111<-data.frame(out_degree_111,in_degree_111,betwn_111,eigencentr_111$vector)
+tabl_222<-data.frame(out_degree_222,in_degree_222,betwn_222,eigencentr_222$vector)
+
+write.csv(tabl_111, file = "tabl_111.csv")
+write.csv(tabl_222, file = "tabl_222.csv")
+```
+
+```{r}
+library(dplyr)
+summary(Puma$followers_count)
+Puma_influencers<-Puma %>%
+  select(screen_name,retweet_screen_name,followers_count)%>%
+  subset(followers_count>243.3)
+Puma_users<-Puma %>%
+  select(screen_name,retweet_screen_name,followers_count)%>%
+  subset(followers_count<243.3)
+
+Puma_influencers<-Puma_influencers %>%
+  select(screen_name,retweet_screen_name)
+Puma_users<-Puma_users %>%
+  select(screen_name,retweet_screen_name)
+
+Puma_influencers <- Puma_influencers[complete.cases(Puma_influencers), ]
+Puma_users <- Puma_users[complete.cases(Puma_users), ]
+
+Puma_influencers_matrix<- as.matrix(Puma_influencers)
+Puma_users_matrix<- as.matrix(Puma_users)
+
+library(igraph)
+Puma_333 <- graph_from_edgelist(el = Puma_users_matrix, directed = TRUE)
+print.igraph(Puma_333)
+
+library(igraph)
+Puma_444 <- graph_from_edgelist(el = Puma_influencers_matrix, directed = TRUE)
+print.igraph(Puma_444)
+```
+
+```{r}
+library(igraph)
+
+out_degree_333 <- degree(Puma_333, mode = c("out"))
+out_degree_444 <- degree(Puma_444, mode = c("out"))
+
+in_degree_333 <- degree(Puma_333, mode = c("in"))
+in_degree_444 <- degree(Puma_444, mode = c("in"))
+
+betwn_333 <- betweenness(Puma_333, directed = TRUE)
+betwn_444 <- betweenness(Puma_444, directed = TRUE)
+
+eigencentr_333<-eigen_centrality(Puma_333, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_444<-eigen_centrality(Puma_444, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_333<-data.frame(out_degree_333,in_degree_333,betwn_333,eigencentr_333$vector)
+tabl_444<-data.frame(out_degree_444,in_degree_444,betwn_444,eigencentr_444$vector)
+
+write.csv(tabl_333, file = "tabl_333.csv")
+write.csv(tabl_444, file = "tabl_444.csv")
+```
+
+```{r}
+ConComp = components(Puma_rtweet)
+ConComp$no
+```

@@ -1,0 +1,390 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+#Загрузка необходимых пакетов
+install.packages('rtweet')
+install.packages('dplyr')
+install.packages('igraph')
+```
+
+```{r}
+#Загрузка данных по 10 спортивным брендам
+Jordan<-read.csv('dataJordan.csv')
+```
+
+Jordan
+```{r}
+#Подготовка данных по Jordan
+library(rtweet)
+Jordan$created_at<-as.numeric(Jordan$created_at)
+Jordan$display_text_width<-as.numeric(Jordan$display_text_width)
+Jordan$is_quote<-as.logical(Jordan$is_quote)
+Jordan$is_retweet<-as.logical(Jordan$is_retweet)
+Jordan$favorite_count<-as.numeric(Jordan$favorite_count)
+Jordan$retweet_count<-as.numeric(Jordan$retweet_count)
+Jordan$quote_count<-as.numeric(Jordan$quote_count)
+Jordan$reply_count<-as.numeric(Jordan$reply_count)
+Jordan$hashtags<-as.character(Jordan$hashtags)
+Jordan$quoted_created_at<-as.numeric(Jordan$quoted_created_at)
+Jordan$quoted_favorite_count<-as.numeric(Jordan$quoted_favorite_count)
+Jordan$quoted_retweet_count<-as.numeric(Jordan$quoted_retweet_count)
+Jordan$quoted_followers_count<-as.numeric(Jordan$quoted_followers_count)
+Jordan$quoted_friends_count-as.numeric(Jordan$quoted_friends_count)
+Jordan$quoted_statuses_count-as.numeric(Jordan$quoted_statuses_count)
+Jordan$quoted_verified-as.logical(Jordan$quoted_verified)
+
+library(dplyr)
+Jordan_new <- Jordan%>%
+  select(screen_name,retweet_screen_name)
+```
+
+```{r}
+#Начало сетевого анализа - удаление пропущенных данных, подготовка базовой матрицы, оформление двухстолбцовой матрицы для расчета метрик
+Jordan_new <- Jordan_new[complete.cases(Jordan_new), ]
+Jordan_for_matrix<-Jordan_new%>%
+  select(screen_name,retweet_screen_name)
+Jordan_new_matrix<- as.matrix(Jordan_for_matrix)
+
+
+library(igraph)
+Jordan_rtweet <- graph_from_edgelist(el = Jordan_new_matrix, directed = TRUE)
+print.igraph(Jordan_rtweet)
+```
+```{r}
+library(igraph)
+# Calculate out-degree (The number of edges going out of a vertex in a directed graph)
+out_degree <- degree(Jordan_rtweet, mode = c("out"))
+out_degree_sort <- sort(out_degree, decreasing = TRUE)
+# View the top 10 users
+out_degree_sort[1:10]
+```
+
+```{r}
+# Calculate in-degree (The number of edges coming into a vertex in a directed graph)
+in_degree <- degree(Jordan_rtweet, mode = c("in"))
+in_degree_sort <- sort(in_degree, decreasing = TRUE)
+# View the top 10 users
+in_degree_sort[1:10]
+```
+```{r}
+# Calculate betweeness centrality (measures the number of times a node lies on the shortest path between other nodes)
+betwn <- betweenness(Jordan_rtweet, directed = TRUE)
+betwn_sort <- betwn %>%
+  sort(decreasing = TRUE) %>%
+  round()
+# View the top 10 users
+betwn_sort[1:10]
+```
+```{r}
+# Calculate eigenvector centrality (measures the influence of a node in a network)
+eigencentr<-eigen_centrality(Jordan_rtweet, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_sort<-sort(eigencentr$vector, decreasing = TRUE)
+# View the top 10 users
+eigencentr_sort[1:10]
+```
+
+
+
+
+```{r}
+#  tweet count score - расчет суммы твитов и ретвитов пользователя
+Jordan_new1 <- Jordan%>%
+  select(screen_name,retweet_screen_name)
+Jordan_new1 <- Jordan_new1[complete.cases(Jordan_new1), ]
+Jordan_new1<-data.frame(Jordan_new1)
+library(dplyr)
+Jordan_new2<-Jordan_new1 %>%
+  select(screen_name,retweet_screen_name) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(number1=n())
+
+Jordan_new2<-Jordan_new2 %>%
+  group_by(retweet_screen_name) %>%
+  dplyr::mutate(number2=n())
+
+Jordan_first<-Jordan_new2%>%
+  ungroup()%>%
+  select(screen_name,number1)
+
+Jordan_second<-Jordan_new2%>%
+  ungroup()%>%
+  select(retweet_screen_name,number2)
+
+#расчет результатов и удаление дубликатов
+Jordan_new2<-inner_join(Jordan_first,Jordan_second,by=c("screen_name"="retweet_screen_name"))
+Jordan_new2<-Jordan_new2%>%
+  ungroup()%>%
+  dplyr::mutate(order=row_number())
+Jordan_new2<-Jordan_new2%>%
+  group_by(order)%>%
+  dplyr::mutate(tweet_count_score=number1+number2)
+Jordan_new_with_score <- Jordan_new2[!duplicated(Jordan_new2$screen_name),]
+```
+
+
+```{r}
+#  follower rank - расчет соотношения числа подписчиков и подписок
+library(dplyr)
+Jordan_new3<-Jordan %>%
+  select(screen_name,followers_count,friends_count) %>%
+  group_by(screen_name) %>%
+  dplyr::mutate(follower_rank=followers_count/(followers_count+friends_count))
+
+Jordan_new3$follower_rank<-as.numeric(Jordan_new3$follower_rank)
+
+#удаление дубликатов
+Jordan_new3 <- Jordan_new3[!duplicated(Jordan_new3$screen_name),]
+write.csv(Jordan_new3, file = "followers.csv")
+```
+
+```{r}
+#Аутпут получившихся показателей
+table1<-data.frame(out_degree_sort[1:10])
+table2<-data.frame(in_degree_sort[1:10])
+table3<-data.frame(betwn_sort[1:10])
+table4<-data.frame(eigencentr_sort[1:10])
+```
+
+```{r}
+#Визуализация сети
+library(dplyr)
+Jordan_viz <-Jordan%>%
+  select(screen_name,retweet_screen_name)
+Jordan_viz <- Jordan_viz[complete.cases(Jordan_viz), ]
+
+Jordan_viz <-subset(Jordan_viz,screen_name==c("vivingski","graciejnalways","toronto_jadine","CARELESS_PH","GullibleGizmo","AlcuizarRuby","August11877","eyaerbin","Fritzie00675024","Neydhine","itsmetellemyen","shoumarie143","nadinereligion","NOZOMIK0MIYA","glowinglustrous","hello_nadine","Jumpman23","nyknicks","JaDineNATION","leigh3112","NaddictsOfc","GatorsUnis","1121_grace","EveliaQuinte2","ms_translucent","LLusreid","x_elites","alexisfaye15","________gr8","atmos_tokyo","nikefootball","mcuban","sizeofficial","cncpts"))
+Jordan_viz<-as.matrix(Jordan_viz)
+
+
+library(igraph)
+Jordan_viz_graph <- graph_from_edgelist(el = Jordan_viz, directed = TRUE)
+print.igraph(Jordan_viz_graph)
+
+library(igraph)
+print.igraph(Jordan_viz_graph)
+print.igraph(Jordan_viz_graph)
+deg_out <- degree(Jordan_viz_graph, mode = c("out"))
+vert_size<-(deg_out*1.5)+8
+set.seed(1234)
+plot.igraph(Jordan_viz_graph,axes=FALSE,asp = 0,vertex.shape="square",vertex.size = vert_size,vertex.color = "skyblue1",edge.arrow.size = 0.7,edge.color = "gray26",vertex.label.cex = 0.3,vertex.label.color = "black",rescale=TRUE)
+```
+```{r}
+#Разделение выборки на инфлюенсеров и не инфлюенсеров. Допущение: выше 25% квартиля по количеству подписчиков инфлюенсеры, ниже обычные пользователи
+library(dplyr)
+summary(Jordan$followers_count)
+Jordan_influencers<-Jordan %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count>516)
+Jordan_users<-Jordan %>%
+  select(screen_name,favorite_count,retweet_count,followers_count)%>%
+  subset(followers_count<516)
+
+#Необходимо посчитать коэффициент вовлеченность. Формула = (лайки+комментарии+репосты)/количество постов/количество подписчиков *100%
+
+#Инфлюенсеры
+Jordan_influencers1<-Jordan_influencers%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Jordan_influencers<-inner_join(Jordan_influencers,Jordan_influencers1,by=c("screen_name"="screen_name"))
+Jordan_influencers <- Jordan_influencers[complete.cases(Jordan_influencers), ]
+
+Jordan_influencers<-Jordan_influencers%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Jordan_influencers<-Jordan_influencers%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Jordan_influencers<-Jordan_influencers%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Jordan_influencers <- Jordan_influencers[!duplicated(Jordan_influencers$screen_name),]
+write.csv(Jordan_influencers, file = "Jordan_influencers.csv")
+
+#Пользователи
+Jordan_users1<-Jordan_users%>%
+  dplyr::group_by(screen_name)%>%
+  dplyr::summarise(posts=n())
+Jordan_users<-inner_join(Jordan_users,Jordan_users1,by=c("screen_name"="screen_name"))
+Jordan_users <- Jordan_users[complete.cases(Jordan_users), ]
+
+Jordan_users<-Jordan_users%>%
+  mutate(upper=favorite_count+retweet_count)
+
+Jordan_users<-Jordan_users%>%
+  mutate(ER=(upper/followers_count)*100)
+
+Jordan_users<-Jordan_users%>%
+  group_by(screen_name)%>%
+  mutate(ER_final=sum(ER,na.rm=FALSE))
+#удаление дубликатов
+Jordan_users <- Jordan_users[!duplicated(Jordan_users$screen_name),]
+write.csv(Jordan_users, file = "Jordan_users.csv")
+
+
+#Сравнение вовлеченности
+Jordan_users$ER_final<-as.numeric(Jordan_users$ER_final)
+Jordan_users$ER_final[!is.finite(Jordan_users$ER_final)] <- 0
+summary(Jordan_users$ER_final)
+```
+
+```{r}
+Jordan_influencers$ER_final<-as.numeric(Jordan_influencers$ER_final)
+Jordan_influencers$ER_final[!is.finite(Jordan_influencers$ER_final)] <- 0
+summary(Jordan_influencers$ER_final)
+```
+```{r}
+#Топ verified аккаунтов
+Jordan_verified<-Jordan%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Jordan_verified<-Jordan_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Jordan_verified$coef)
+
+Jordan_not_verified<-Jordan%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Jordan_not_verified<-Jordan_not_verified%>%
+  dplyr::mutate(coef=favorite_count+retweet_count)
+sum(Jordan_not_verified$coef)
+
+sum(Jordan_not_verified$coef)/sum(Jordan_verified$coef)
+10727/32
+
+sum(Jordan_verified$coef)/sum(Jordan_not_verified$coef)
+32/10727
+```
+
+Средние значения метрик
+```{r}
+Jordan_features<-Jordan %>%
+  select(screen_name,followers_count,verified)
+Jordan_features[!duplicated(Jordan_features),]
+
+t1<-data.frame(in_degree_sort)
+t2<-data.frame(out_degree_sort)
+t3<-data.frame(betwn_sort)
+t4<-data.frame(eigencentr_sort)
+
+write.csv(t1, file = "t1.csv")
+write.csv(t2, file = "t2.csv")
+write.csv(t3, file = "t3.csv")
+write.csv(t4, file = "t4.csv")
+write.csv(Jordan_features, file = "t5.csv")
+```
+
+```{r}
+Jordan_verified<-Jordan%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==TRUE)
+
+Jordan_not_verified<-Jordan%>%
+  select(screen_name,retweet_screen_name,favorite_count,retweet_count,followers_count,verified)%>%
+  subset(verified==FALSE)
+
+Jordan_verified <- Jordan_verified[complete.cases(Jordan_verified), ]
+Jordan_not_verified <- Jordan_not_verified[complete.cases(Jordan_not_verified), ]
+
+Jordan_verified<-Jordan_verified%>%
+  select(screen_name,retweet_screen_name)
+Jordan_verified_matrix<- as.matrix(Jordan_verified)
+
+Jordan_not_verified<-Jordan_not_verified%>%
+  select(screen_name,retweet_screen_name)
+Jordan_not_verified_matrix<- as.matrix(Jordan_not_verified)
+
+
+library(igraph)
+Jordan_111 <- graph_from_edgelist(el = Jordan_verified_matrix, directed = TRUE)
+print.igraph(Jordan_111)
+
+library(igraph)
+Jordan_222 <- graph_from_edgelist(el = Jordan_not_verified_matrix, directed = TRUE)
+print.igraph(Jordan_222)
+```
+
+```{r}
+library(igraph)
+
+out_degree_111 <- degree(Jordan_111, mode = c("out"))
+out_degree_222 <- degree(Jordan_222, mode = c("out"))
+
+in_degree_111 <- degree(Jordan_111, mode = c("in"))
+in_degree_222 <- degree(Jordan_222, mode = c("in"))
+
+betwn_111 <- betweenness(Jordan_111, directed = TRUE)
+betwn_222 <- betweenness(Jordan_222, directed = TRUE)
+
+eigencentr_111<-eigen_centrality(Jordan_111, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_222<-eigen_centrality(Jordan_222, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_111<-data.frame(out_degree_111,in_degree_111,betwn_111,eigencentr_111$vector)
+tabl_222<-data.frame(out_degree_222,in_degree_222,betwn_222,eigencentr_222$vector)
+
+write.csv(tabl_111, file = "tabl_111.csv")
+write.csv(tabl_222, file = "tabl_222.csv")
+```
+
+```{r}
+library(dplyr)
+summary(Jordan$followers_count)
+Jordan_influencers<-Jordan %>%
+  select(screen_name,retweet_screen_name,followers_count)%>%
+  subset(followers_count>516)
+Jordan_users<-Jordan %>%
+  select(screen_name,retweet_screen_name,followers_count)%>%
+  subset(followers_count<516)
+
+Jordan_influencers<-Jordan_influencers %>%
+  select(screen_name,retweet_screen_name)
+Jordan_users<-Jordan_users %>%
+  select(screen_name,retweet_screen_name)
+
+Jordan_influencers <- Jordan_influencers[complete.cases(Jordan_influencers), ]
+Jordan_users <- Jordan_users[complete.cases(Jordan_users), ]
+
+Jordan_influencers_matrix<- as.matrix(Jordan_influencers)
+Jordan_users_matrix<- as.matrix(Jordan_users)
+
+library(igraph)
+Jordan_333 <- graph_from_edgelist(el = Jordan_users_matrix, directed = TRUE)
+print.igraph(Jordan_333)
+
+library(igraph)
+Jordan_444 <- graph_from_edgelist(el = Jordan_influencers_matrix, directed = TRUE)
+print.igraph(Jordan_444)
+```
+
+```{r}
+library(igraph)
+
+out_degree_333 <- degree(Jordan_333, mode = c("out"))
+out_degree_444 <- degree(Jordan_444, mode = c("out"))
+
+in_degree_333 <- degree(Jordan_333, mode = c("in"))
+in_degree_444 <- degree(Jordan_444, mode = c("in"))
+
+betwn_333 <- betweenness(Jordan_333, directed = TRUE)
+betwn_444 <- betweenness(Jordan_444, directed = TRUE)
+
+eigencentr_333<-eigen_centrality(Jordan_333, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+eigencentr_444<-eigen_centrality(Jordan_444, directed = FALSE, scale = TRUE, weights = NULL, options = arpack_defaults)
+
+tabl_333<-data.frame(out_degree_333,in_degree_333,betwn_333,eigencentr_333$vector)
+tabl_444<-data.frame(out_degree_444,in_degree_444,betwn_444,eigencentr_444$vector)
+
+write.csv(tabl_333, file = "tabl_333.csv")
+write.csv(tabl_444, file = "tabl_444.csv")
+```
+
+```{r}
+ConComp = components(Jordan_rtweet)
+ConComp$no
+```
